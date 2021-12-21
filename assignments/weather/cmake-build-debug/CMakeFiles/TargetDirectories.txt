@@ -1,0 +1,3 @@
+D:/Documents/LAVORI/ITU/Graphics Programming/graphics-programming-2021/assignments/weather/cmake-build-debug/CMakeFiles/assignment_weather.dir
+D:/Documents/LAVORI/ITU/Graphics Programming/graphics-programming-2021/assignments/weather/cmake-build-debug/CMakeFiles/edit_cache.dir
+D:/Documents/LAVORI/ITU/Graphics Programming/graphics-programming-2021/assignments/weather/cmake-build-debug/CMakeFiles/rebuild_cache.dir

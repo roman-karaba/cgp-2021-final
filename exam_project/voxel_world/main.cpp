@@ -9,6 +9,7 @@
 #include "shader.h"
 #include "camera.h"
 #include "model.h"
+#include "PerlinLikeNoise.h"
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -57,7 +58,7 @@ bool isPaused = false; // used to stop camera movement when GUI is open
 Camera camera(glm::vec3(0.0f, 1.6f, 5.0f));
 
 // parameters that can be set in our GUI
-// -------------------------------------
+// -------------------------------------x
 struct Config {
     // shading model
     bool usingDeferredShading = false;
@@ -121,7 +122,18 @@ int main()
         return -1;
     }
 
+    PerlinLikeNoise noise;
+    noise.init();
+    auto seedVec = noise.getSeedVector();
+    int octaveCount = 5;
+    float bias = 2.f;
+    auto noiseVector1D = noise.Noise1D(noise.size, &(noise.seedVector1D), octaveCount, bias);
 
+//    std::cout<<noiseVector1D.size()<<std::endl;
+//    for(auto element : noiseVector1D) std::cout<<element<<std::endl;
+
+    auto noiseVector2D = noise.Noise2D(256, 256, &(noise.seedVector2D), octaveCount, bias);
+    
     // init shaders and models
 	carPaint = new Model("car/Paint_LOD0.obj");
 	carBody = new Model("car/Body_LOD0.obj");

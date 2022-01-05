@@ -8,10 +8,11 @@ out vec3 normal;
 
 //uniform mat4 viewMatrix;
 uniform mat4 viewProjectionMatrix;
+uniform vec3 chunkOffset;
 
 void main()
 {
-   vec3 worldPos = pos+instancingOffsets;
+   vec3 worldPos = pos+instancingOffsets + chunkOffset;
 //   vtxPosVS = (viewMatrix * vec4(worldPos, 1)).xyz;
    gl_Position = viewProjectionMatrix * vec4(worldPos , 1.0);
    vtxPos = worldPos;

@@ -2,7 +2,7 @@
 /cmake-build-release/*
 /.idea/*
 /student_projects/*
-
+.vscode/*
 .DS_Store
 
 # Prerequisites

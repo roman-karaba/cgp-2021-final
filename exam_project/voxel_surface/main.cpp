@@ -32,8 +32,8 @@ struct SceneObject{
 unsigned int createArrayBuffer(const std::vector<float> &array);
 unsigned int createElementArrayBuffer(const std::vector<unsigned int> &array);
 unsigned int createVertexArray(const std::vector<float> &positions,
-                               const std::vector<unsigned int> &indices,
                                const std::vector<float> &instancingOffsets = std::vector<float>(),
+                               const std::vector<unsigned int> &indices = std::vector<unsigned int>(),
                                const std::vector<float> &normals = std::vector<float>(),
                                const std::vector<float> &colors = std::vector<float>());
 void setup();
@@ -48,6 +48,7 @@ void cursor_input_callback(GLFWwindow* window, double posX, double posY);
 void key_input_callback(GLFWwindow* window, int key, int scanCode, int action, int mods);
 void drawCube(glm::mat4 model);
 void drawPlane(glm::mat4 model);
+void createVoxelLandscape();
 
 // screen settings
 // ---------------
@@ -69,7 +70,7 @@ struct InstancedSceneObject{
     unsigned int vertexCount;
     unsigned int instanceCount;
 
-    void drawSceneObject(Shader *shader) const{
+    void drawSceneObject(Shader *shader, glm::vec3 chunkOffset) const{
         glm::vec3 front;
         front.x = cos(glm::radians(sunLightDirection.x)) * cos(glm::radians(sunLightDirection.y));
         front.y = sin(glm::radians(sunLightDirection.y));
@@ -82,6 +83,7 @@ struct InstancedSceneObject{
         shader->setVec3("sunLightColor", sunLightColor);
         shader->setVec3("sunLightDirection", normalizedFront);
         shader->setFloat("sunLightIntensity", sunLightIntensity);
+        shader->setVec3("chunkOffset", chunkOffset);
         glBindVertexArray(VAO);
 //        glDrawElementsInstanced(GL_TRIANGLES,  vertexCount, GL_UNSIGNED_INT, 0, instanceCount);
         glDrawArraysInstanced(GL_TRIANGLES, 0, vertexCount, instanceCount);
@@ -109,6 +111,9 @@ float bias = 1.f;
 float heightScalar = 32.f;
 float loopInterval = 0.f;
 float deltaTime = 0.f;
+
+unsigned int vertexCount2;
+
 
 
 
@@ -155,8 +160,9 @@ int main()
     GLCall(glDepthRange(-1,1)); // make the NDC a LEFT handed coordinate system, with the camera pointing towards +z
     glEnable(GL_DEPTH_TEST); // turn on z-buffer depth test
     glDepthFunc(GL_LESS); // draws fragments that are closer to the screen in NDC
-    glEnable(GL_VERTEX_PROGRAM_POINT_SIZE);
     glBlendFunc(GL_SRC_ALPHA, GL_DST_ALPHA);
+    glEnable(GL_CULL_FACE);
+    glFrontFace(GL_CCW);
 
     // render loop
     // -----------
@@ -175,7 +181,7 @@ int main()
         glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        instancedCube.drawSceneObject(shaderProgram);
+        createVoxelLandscape();
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -200,6 +206,22 @@ int main()
     return 0;
 }
 
+void createVoxelLandscape()
+{
+    instancedCube.drawSceneObject(shaderProgram, glm::vec3(0));
+    instancedCube.drawSceneObject(shaderProgram, glm::vec3(perlinWidth, 0, 0));
+    instancedCube.drawSceneObject(shaderProgram, glm::vec3(-perlinWidth, 0, 0));
+
+    instancedCube.drawSceneObject(shaderProgram, glm::vec3(0, 0, perlinHeight));
+    instancedCube.drawSceneObject(shaderProgram, glm::vec3(0, 0, -perlinHeight));
+
+    instancedCube.drawSceneObject(shaderProgram, glm::vec3(perlinWidth, 0, perlinHeight));
+    instancedCube.drawSceneObject(shaderProgram, glm::vec3(-perlinWidth, 0, -perlinHeight));
+
+    instancedCube.drawSceneObject(shaderProgram, glm::vec3(-perlinWidth, 0, perlinHeight));
+    instancedCube.drawSceneObject(shaderProgram, glm::vec3(perlinWidth, 0, -perlinHeight));
+}
+
 void drawObjects(){
     shaderProgram->use();
 
@@ -214,7 +236,6 @@ void drawObjects(){
     drawCube(viewProjection * glm::translate(2.0f, 1.f, 2.0f) * glm::rotateY(glm::half_pi<float>()) * scale);
     drawCube(viewProjection * glm::translate(-2.0f, 1.f, -2.0f) * glm::rotateY(glm::quarter_pi<float>()) * scale);
 }
-
 
 void drawCube(glm::mat4 model){
     // draw object
@@ -236,17 +257,19 @@ std::vector<float> createInstancingOffsets()
             instancingOffsets.push_back(x - perlinWidth/2);
             instancingOffsets.push_back(glm::round(y * heightScalar ));
             instancingOffsets.push_back(z - perlinHeight/2);
+
         }
     }
     return instancingOffsets;
 }
+
 
 void setup(){
     // initialize shaders
     shaderProgram = new Shader("shaders/default.vert", "shaders/default.frag");
 
     std::vector<float> offsets = createInstancingOffsets();
-    instancedCube.VAO = createVertexArray(unitCubeVertices, cubeIndices, offsets);
+    instancedCube.VAO = createVertexArray(vertices, offsets);
     instancedCube.vertexCount = vertices.size()/6;
     instancedCube.instanceCount = perlinWidth * perlinHeight;
 }
@@ -254,8 +277,8 @@ void setup(){
 
 unsigned int createVertexArray(
         const std::vector<float> &positions,
-        const std::vector<unsigned int> &indices,
         const std::vector<float> &instancingOffsets,
+        const std::vector<unsigned int> &indices,
         const std::vector<float> &normals,
         const std::vector<float> &colors)
 {
@@ -293,7 +316,7 @@ unsigned int createArrayBuffer(const std::vector<float> &array){
     glGenBuffers(1, &VBO);
 
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, array.size() * sizeof(GLfloat), &array[0], GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, array.size() * sizeof(float), array.data(), GL_STATIC_DRAW);
 
     return VBO;
 }
@@ -301,7 +324,7 @@ unsigned int createArrayBuffer(const std::vector<float> &array){
 void updateVBO(const std::vector<float> &array, unsigned int ID)
 {
     glBindBuffer(GL_ARRAY_BUFFER, ID);
-    glBufferData(GL_ARRAY_BUFFER, array.size() * sizeof(GLfloat), &array[0], GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, array.size() * sizeof(float), array.data(), GL_STATIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
@@ -310,7 +333,7 @@ unsigned int createElementArrayBuffer(const std::vector<unsigned int> &array){
     glGenBuffers(1, &EBO);
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, array.size() * sizeof(unsigned int), &array[0], GL_STATIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, array.size() * sizeof(unsigned int), array.data(), GL_STATIC_DRAW);
 
     return EBO;
 }
@@ -355,9 +378,8 @@ void key_input_callback(GLFWwindow* window, int key, int scanCode, int action, i
                 if (octaveCount > 7.f)
                 {
                     octaveCount = 1.f;
-                    return;
-                }
-                octaveCount++;
+                } else octaveCount++;
+
                 std::cout<< "1: OctaveCount: " << octaveCount << std::endl;
                 auto offsets = createInstancingOffsets();
                 updateVBO(offsets, instancedCube.VBO);
@@ -368,9 +390,8 @@ void key_input_callback(GLFWwindow* window, int key, int scanCode, int action, i
                 if (bias > 5.f)
                 {
                     bias = 1.f;
-                    return;
-                }
-                bias += 0.5f;
+                } else bias += 0.5f;
+
                 std::cout<< "2: Bias: " << bias << std::endl;
                 auto offsets = createInstancingOffsets();
                 updateVBO(offsets, instancedCube.VBO);
@@ -381,9 +402,8 @@ void key_input_callback(GLFWwindow* window, int key, int scanCode, int action, i
                 if (heightScalar > 128.f)
                 {
                     heightScalar = 2.f;
-                    return;
-                }
-                heightScalar *= 2;
+                } else heightScalar *= 2;
+
                 std::cout<< "3: HeightScalar: " << heightScalar << std::endl;
                 auto offsets = createInstancingOffsets();
                 updateVBO(offsets, instancedCube.VBO);

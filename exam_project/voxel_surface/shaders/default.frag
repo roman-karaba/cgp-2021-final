@@ -7,9 +7,9 @@ uniform vec3 sunLightDirection;
 uniform vec3 sunLightColor;
 uniform float sunLightIntensity;
 
-vec4 colorWater = vec4(0, 0, 1, 0);
-vec4 colorGrass = vec4(0, 1, 0, 0);
-vec4 colorStone= vec4(.7, .7, .7 ,0);
+vec4 colorWater = vec4(0, 0, .5, 0);
+vec4 colorGrass = vec4(0, .5, 0, 0);
+vec4 colorStone= vec4(.3, .3, .3 ,0);
 
 void main()
 {

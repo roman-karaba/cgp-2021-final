@@ -1,0 +1,6 @@
+- controls
+  - WASD + mouse - movement
+  - 1 - set gravity and velocity for Snow;
+  - 2 - set gravity and velocity for Rain;
+  - P - render as Particle
+  - L - render as Line

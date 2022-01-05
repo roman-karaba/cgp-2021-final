@@ -6,7 +6,6 @@
 
 class PerlinLikeNoise {
 
-
 public:
     int size = 256;
     std::vector<float> seedVector1D;
@@ -14,7 +13,7 @@ public:
 
     std::vector<float> *getSeedVector() { return &seedVector1D; }
 
-    void init(int _size = 256)
+    PerlinLikeNoise(int _size = 256)
     {
         size = _size;
 
@@ -23,9 +22,33 @@ public:
         std::uniform_real_distribution<> distr(0, 1);
 
         // the other approach to generating random floats between 0-1 is: val = (float)rand() / (float)RAND_MAX;
+        for (int i = 0; i < size; i++) seedVector1D.push_back((float)distr(gen));
+        for (int i = 0; i < size*size; i++) seedVector2D.push_back((float)distr(gen));
+    }
+
+    void reseed()
+    {
+        std::random_device rd; // obtain a random number from hardware
+        std::mt19937 gen(rd()); // seed
+        std::uniform_real_distribution<> distr(0, 1);
+
+        seedVector1D.clear();
+        seedVector2D.clear();
 
         for (int i = 0; i < size; i++) seedVector1D.push_back((float)distr(gen));
         for (int i = 0; i < size*size; i++) seedVector2D.push_back((float)distr(gen));
+    }
+
+    void print1DSeed()
+    {
+        std::cout<<"1d Perlin"<<std::endl;
+        for (auto element : seedVector1D) std::cout<<element<<std::endl;
+    }
+
+    void print2DSeed()
+    {
+        std::cout<<"2d Perlin"<<std::endl;
+        for (auto element : seedVector2D) std::cout<<element<<std::endl;
     }
 
     std::vector<float> Noise1D(int count, std::vector<float> *seed, int numOfOctaves, float bias)

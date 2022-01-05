@@ -11,6 +11,9 @@ public:
     std::vector<float> seedVector1D;
     std::vector<float> seedVector2D;
 
+    std::vector<float> noiseVector1D;
+    std::vector<float> noiseVector2D;
+
     std::vector<float> *getSeedVector() { return &seedVector1D; }
 
     PerlinLikeNoise(int _size = 256)
@@ -76,7 +79,8 @@ public:
 
             outputVector[noiseIndex] = (noiseAccumulator / scaleAccumulator);
         }
-        return outputVector;
+        noiseVector1D = outputVector;
+        return noiseVector1D;
     }
 
     std::vector<float> Noise2D(int width, int height, std::vector<float> *seed, int numOfOctaves, float bias)
@@ -113,6 +117,7 @@ public:
                 outputVector[noiseIndexY * width + noiseIndexX] = noiseAccumulator / scaleAccumulator;
             }
         }
+        noiseVector2D = outputVector;
         return outputVector;
     }
 

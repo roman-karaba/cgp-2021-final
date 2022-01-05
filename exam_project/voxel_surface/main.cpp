@@ -31,16 +31,21 @@ struct SceneObject{
 // ---------------------
 unsigned int createArrayBuffer(const std::vector<float> &array);
 unsigned int createElementArrayBuffer(const std::vector<unsigned int> &array);
-unsigned int createVertexArray(const std::vector<float> &positions, const std::vector<float> &colors, const std::vector<unsigned int> &indices, const std::vector<float> &instancingOffsets = std::vector<float>());
+unsigned int createVertexArray(const std::vector<float> &positions,
+                               const std::vector<unsigned int> &indices,
+                               const std::vector<float> &instancingOffsets = std::vector<float>(),
+                               const std::vector<float> &normals = std::vector<float>(),
+                               const std::vector<float> &colors = std::vector<float>());
 void setup();
 void drawObjects();
-
+void calculateCubeSurfaceNormals();
 // glfw and input functions
 // ------------------------
 void cursorInRange(float screenX, float screenY, int screenW, int screenH, float min, float max, float &x, float &y);
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow* window);
 void cursor_input_callback(GLFWwindow* window, double posX, double posY);
+void key_input_callback(GLFWwindow* window, int key, int scanCode, int action, int mods);
 void drawCube(glm::mat4 model);
 void drawPlane(glm::mat4 model);
 
@@ -49,28 +54,37 @@ void drawPlane(glm::mat4 model);
 unsigned int screenWidth = 1080;
 unsigned int screenHeight = 1080;
 
-glm::vec3 gravityOffset = glm::vec3(0);
-glm::vec3 gravityVelocity = glm::vec3(0.f, -1.f, 0.f);
-glm::vec3 windOffset = glm::vec3(0);
-glm::vec3 windVelocity = glm::vec3(0.2f, 0.f, 0.2f);
-float distanceToCube = 10;
 float currentTime = 0;
-float particleScale = 3.f;
 
 float lastX = (float)screenWidth / 2.0;
 float lastY = (float)screenHeight / 2.0;
 Camera camera(glm::vec3(0.f, 32.f, 0.f));
+glm::vec2 sunLightDirection = glm::vec2(glm::radians(-20.f), glm::radians(-20.f));
+glm::vec3 sunLightColor = glm::vec3(0.9f, 0.6f, 0.5f);
+float sunLightIntensity = 0.3;
 
 struct InstancedSceneObject{
     unsigned int VAO;
+    unsigned int VBO;
     unsigned int vertexCount;
     unsigned int instanceCount;
 
     void drawSceneObject(Shader *shader) const{
+        glm::vec3 front;
+        front.x = cos(glm::radians(sunLightDirection.x)) * cos(glm::radians(sunLightDirection.y));
+        front.y = sin(glm::radians(sunLightDirection.y));
+        front.z = sin(glm::radians(sunLightDirection.x)) * cos(glm::radians(sunLightDirection.y));
+        glm::vec3 normalizedFront = glm::normalize(front);
+        normalizedFront = glm::vec3(0,-1,0);
+
         shader->use();
         shader->setMat4("viewProjectionMatrix", camera.getViewProjectionMatrix(screenWidth, screenHeight));
+        shader->setVec3("sunLightColor", sunLightColor);
+        shader->setVec3("sunLightDirection", normalizedFront);
+        shader->setFloat("sunLightIntensity", sunLightIntensity);
         glBindVertexArray(VAO);
-        glDrawElementsInstanced(GL_TRIANGLES,  vertexCount, GL_UNSIGNED_INT, 0, instanceCount);
+//        glDrawElementsInstanced(GL_TRIANGLES,  vertexCount, GL_UNSIGNED_INT, 0, instanceCount);
+        glDrawArraysInstanced(GL_TRIANGLES, 0, vertexCount, instanceCount);
     }
 };
 
@@ -90,8 +104,13 @@ InstancedSceneObject instancedCube;
 
 int perlinWidth = 256;
 int perlinHeight = 256;
+int octaveCount = 5;
+float bias = 1.f;
+float heightScalar = 32.f;
 float loopInterval = 0.f;
 float deltaTime = 0.f;
+
+
 
 int main()
 {
@@ -119,6 +138,7 @@ int main()
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetCursorPosCallback(window, cursor_input_callback);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    glfwSetKeyCallback(window, key_input_callback);
 
     // glad: load all OpenGL function pointers
     // ---------------------------------------
@@ -204,10 +224,6 @@ void drawCube(glm::mat4 model){
 
 std::vector<float> createInstancingOffsets()
 {
-    int octaveCount = 5;
-    float bias = 2.f;
-    float heightScalar = 32.f;
-
     auto perlinNoise = noise.Noise2D(perlinWidth, perlinHeight, &noise.seedVector2D, octaveCount, bias);
     std::vector<float> instancingOffsets;
 
@@ -215,10 +231,10 @@ std::vector<float> createInstancingOffsets()
     {
         for (int z = 0; z < perlinHeight; z++)
         {
-            float y = perlinNoise[z * perlinWidth + x];
+            float y = noise.noiseVector2D[z * perlinWidth + x] * 2 -1;
 
             instancingOffsets.push_back(x - perlinWidth/2);
-            instancingOffsets.push_back(glm::round(y * heightScalar - heightScalar/2));
+            instancingOffsets.push_back(glm::round(y * heightScalar ));
             instancingOffsets.push_back(z - perlinHeight/2);
         }
     }
@@ -229,29 +245,19 @@ void setup(){
     // initialize shaders
     shaderProgram = new Shader("shaders/default.vert", "shaders/default.frag");
 
-    // load floor mesh into openGL
-    floorObj.VAO = createVertexArray(floorVertices, floorColors, floorIndices);
-    floorObj.vertexCount = floorIndices.size();
-
-    // load cube mesh into openGL
-    cube.VAO = createVertexArray(cubeVertices, cubeColors, cubeIndices);
-    cube.vertexCount = cubeIndices.size();
-
-    unitCube.VAO = createVertexArray(unitCubeVertices, cubeColors, cubeIndices);
-    unitCube.vertexCount = cubeIndices.size();
-
     std::vector<float> offsets = createInstancingOffsets();
-    instancedCube.VAO = createVertexArray(unitCubeVertices, cubeColors, cubeIndices, offsets);
-    instancedCube.vertexCount = cubeIndices.size();
+    instancedCube.VAO = createVertexArray(unitCubeVertices, cubeIndices, offsets);
+    instancedCube.vertexCount = vertices.size()/6;
     instancedCube.instanceCount = perlinWidth * perlinHeight;
 }
 
 
 unsigned int createVertexArray(
         const std::vector<float> &positions,
-        const std::vector<float> &colors,
         const std::vector<unsigned int> &indices,
-        const std::vector<float> &instancingOffsets)
+        const std::vector<float> &instancingOffsets,
+        const std::vector<float> &normals,
+        const std::vector<float> &colors)
 {
     unsigned int VAO;
     glGenVertexArrays(1, &VAO);
@@ -259,23 +265,25 @@ unsigned int createVertexArray(
     glBindVertexArray(VAO);
 
     // set vertex shader attribute "pos"
-    createArrayBuffer(positions); // creates and bind  the VBO
+    createArrayBuffer(vertices); // creates and bind  the VBO
     int posAttributeLocation = glGetAttribLocation(shaderProgram->ID, "pos");
+    int normalAttributeLocation = glGetAttribLocation(shaderProgram->ID, "aNormal");
+
     glEnableVertexAttribArray(posAttributeLocation);
-    glVertexAttribPointer(posAttributeLocation, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(normalAttributeLocation);
+
+    glVertexAttribPointer(posAttributeLocation, 3, GL_FLOAT, GL_FALSE, 6*sizeof(float), 0);
+    glVertexAttribPointer(normalAttributeLocation, 3, GL_FLOAT, GL_FALSE, 6*sizeof(float), (void*)(3*sizeof(float)));
 
     // set vertex shader attribute "instancingOffset"
     if (!instancingOffsets.empty())
     {
-        createArrayBuffer(instancingOffsets);
+        instancedCube.VBO = createArrayBuffer(instancingOffsets);
         int offsetAttributeLocation = glGetAttribLocation(shaderProgram->ID, "instancingOffsets");
-        GLCall(glEnableVertexAttribArray(offsetAttributeLocation));
-        GLCall(glVertexAttribPointer(offsetAttributeLocation, 3, GL_FLOAT, GL_FALSE, 0, 0));
-        GLCall(glVertexAttribDivisor(offsetAttributeLocation, 1));
+        glEnableVertexAttribArray(offsetAttributeLocation);
+        glVertexAttribPointer(offsetAttributeLocation, 3, GL_FLOAT, GL_FALSE, 0, 0);
+        glVertexAttribDivisor(offsetAttributeLocation, 1);
     }
-
-    // creates and bind the EBO
-    createElementArrayBuffer(indices);
 
     return VAO;
 }
@@ -288,6 +296,13 @@ unsigned int createArrayBuffer(const std::vector<float> &array){
     glBufferData(GL_ARRAY_BUFFER, array.size() * sizeof(GLfloat), &array[0], GL_STATIC_DRAW);
 
     return VBO;
+}
+
+void updateVBO(const std::vector<float> &array, unsigned int ID)
+{
+    glBindBuffer(GL_ARRAY_BUFFER, ID);
+    glBufferData(GL_ARRAY_BUFFER, array.size() * sizeof(GLfloat), &array[0], GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
 unsigned int createElementArrayBuffer(const std::vector<unsigned int> &array){
@@ -331,6 +346,62 @@ void cursor_input_callback(GLFWwindow* window, double posX, double posY){
     camera.ProcessMouseMovement(xoffset, yoffset);
 }
 
+void key_input_callback(GLFWwindow* window, int key, int scanCode, int action, int mods)
+{
+    switch (key)
+    {
+        case GLFW_KEY_1:
+            if (action == GLFW_RELEASE){
+                if (octaveCount > 7.f)
+                {
+                    octaveCount = 1.f;
+                    return;
+                }
+                octaveCount++;
+                std::cout<< "1: OctaveCount: " << octaveCount << std::endl;
+                auto offsets = createInstancingOffsets();
+                updateVBO(offsets, instancedCube.VBO);
+            }
+            break;
+        case GLFW_KEY_2:
+            if (action == GLFW_RELEASE){
+                if (bias > 5.f)
+                {
+                    bias = 1.f;
+                    return;
+                }
+                bias += 0.5f;
+                std::cout<< "2: Bias: " << bias << std::endl;
+                auto offsets = createInstancingOffsets();
+                updateVBO(offsets, instancedCube.VBO);
+            }
+            break;
+        case GLFW_KEY_3:
+            if (action == GLFW_RELEASE){
+                if (heightScalar > 128.f)
+                {
+                    heightScalar = 2.f;
+                    return;
+                }
+                heightScalar *= 2;
+                std::cout<< "3: HeightScalar: " << heightScalar << std::endl;
+                auto offsets = createInstancingOffsets();
+                updateVBO(offsets, instancedCube.VBO);
+            }
+            break;
+        case GLFW_KEY_4:
+            if (action == GLFW_RELEASE){
+                std::cout<< "4: Reseed" << std::endl;
+                noise.reseed();
+                auto offsets = createInstancingOffsets();
+                updateVBO(offsets, instancedCube.VBO);
+            }
+            break;
+        default:
+            break;
+    }
+}
+
 void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
@@ -344,7 +415,6 @@ void processInput(GLFWwindow *window) {
         camera.ProcessKeyboard(LEFT, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         camera.ProcessKeyboard(RIGHT, deltaTime);
-
 
 }
 

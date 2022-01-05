@@ -1,12 +1,16 @@
 #version 330 core
 layout (location = 0) in vec3 pos;
-layout (location = 1) in vec4 color;
-out vec4 vtxColor;
+layout (location = 1) in vec3 instancingOffsets;
+out vec3 vtxPos;
+//out vec3 vtxPosVS;
 
-uniform mat4 model;
+//uniform mat4 viewMatrix;
+uniform mat4 viewProjectionMatrix;
 
 void main()
 {
-   gl_Position = model * vec4(pos, 1.0);
-   vtxColor = color;
+   vec3 worldPos = pos+instancingOffsets;
+//   vtxPosVS = (viewMatrix * vec4(worldPos, 1)).xyz;
+   gl_Position = viewProjectionMatrix * vec4(worldPos , 1.0);
+   vtxPos = worldPos;
 }

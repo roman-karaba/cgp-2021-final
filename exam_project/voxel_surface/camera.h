@@ -19,7 +19,7 @@ enum Camera_Movement {
 // Default camera values
 const float YAW         = -90.0f;
 const float PITCH       =  0.0f;
-const float SPEED       =  2.5f;
+const float SPEED       =  10.f;
 const float SENSITIVITY =  0.1f;
 const float ZOOM        =  45.0f;
 
@@ -34,6 +34,7 @@ public:
     glm::vec3 Up;
     glm::vec3 Right;
     glm::vec3 WorldUp;
+    glm::mat4 projectionMatrix;
     // Euler Angles
     float Yaw;
     float Pitch;
@@ -59,6 +60,13 @@ public:
         Yaw = yaw;
         Pitch = pitch;
         updateCameraVectors();
+    }
+
+    glm::mat4 getViewProjectionMatrix(float width, float height, float fov = glm::radians(45.0f), float zNear = 0.1f, float zFar = 1000.f)
+    {
+        projectionMatrix = glm::perspective(fov, width / height, 0.1f, 1000.0f);
+        glm::mat4 viewMatrix = glm::lookAt(Position, Position + Front, Up);
+        return (projectionMatrix * viewMatrix);
     }
 
     // Returns the view matrix calculated using Euler Angles and the LookAt Matrix

@@ -24,7 +24,7 @@ file(GLOB target_src "*.h" "*.cpp") # look for source files
 file(GLOB target_shaders "shaders/*.vert" "shaders/*.frag") # look for shaders
 
 set(output_file "voxel_surface")
-add_executable(${output_file} ${target_src} ${target_shaders} opengl_debug.h)
+add_executable(${output_file} ${target_src} ${target_shaders})
 
 ## set link libraries
 target_link_libraries(${output_file} ${libraries})

@@ -7,12 +7,11 @@
 #include <chrono>
 
 #include "shader.h"
-//#include "camera.h"
+#include "camera.h"
 #include "glmutils.h"
 #include "opengl_debug.h"
 
 #include "PerlinLikeNoise.h"
-
 #include "primitives.h"
 
 
@@ -27,11 +26,12 @@ struct SceneObject{
     }
 };
 
+
 // function declarations
 // ---------------------
 unsigned int createArrayBuffer(const std::vector<float> &array);
 unsigned int createElementArrayBuffer(const std::vector<unsigned int> &array);
-unsigned int createVertexArray(const std::vector<float> &positions, const std::vector<float> &colors, const std::vector<unsigned int> &indices);
+unsigned int createVertexArray(const std::vector<float> &positions, const std::vector<float> &colors, const std::vector<unsigned int> &indices, const std::vector<float> &instancingOffsets = std::vector<float>());
 void setup();
 void drawObjects();
 
@@ -48,9 +48,6 @@ void drawPlane(glm::mat4 model);
 // ---------------
 unsigned int screenWidth = 1080;
 unsigned int screenHeight = 1080;
-float loopInterval = 0.f;
-
-//Camera camera(glm::vec3(0.0f, 1.6f, 5.0f));
 
 glm::vec3 gravityOffset = glm::vec3(0);
 glm::vec3 gravityVelocity = glm::vec3(0.f, -1.f, 0.f);
@@ -60,32 +57,41 @@ float distanceToCube = 10;
 float currentTime = 0;
 float particleScale = 3.f;
 
-struct Camera {
-    glm::vec3 forward = glm::vec3(0.f, 0.f, -1.f);
-    glm::vec3 position = glm::vec3(0.f, 1.6f, 0.f);
-    glm::mat4 projectionMatrix = glm::perspective(glm::radians(45.0f), (float)screenWidth / (float)screenHeight, 0.1f, 100.0f);
-    glm::mat4 previousMvpMatrix = glm::mat4(1.0);
-    float moveSpeed = 0.15f;
-    float rotationGain = 30.0f;
+float lastX = (float)screenWidth / 2.0;
+float lastY = (float)screenHeight / 2.0;
+Camera camera(glm::vec3(0.f, 32.f, 0.f));
 
-    glm::mat4 getViewProjectionMatrix()
-    {
-        glm::mat4 viewMatrix = glm::lookAt(position, position + forward, glm::vec3(0,1,0));
-        return (projectionMatrix * viewMatrix);
+struct InstancedSceneObject{
+    unsigned int VAO;
+    unsigned int vertexCount;
+    unsigned int instanceCount;
+
+    void drawSceneObject(Shader *shader) const{
+        shader->use();
+        shader->setMat4("viewProjectionMatrix", camera.getViewProjectionMatrix(screenWidth, screenHeight));
+        glBindVertexArray(VAO);
+        glDrawElementsInstanced(GL_TRIANGLES,  vertexCount, GL_UNSIGNED_INT, 0, instanceCount);
     }
 };
-Camera camera;
-PerlinLikeNoise noise;
 
 // global variables used for rendering
 // -----------------------------------
+PerlinLikeNoise noise;
+Shader* shaderProgram;
+
 SceneObject cube;
 SceneObject unitCube;
 SceneObject floorObj;
 SceneObject planeBody;
 SceneObject planeWing;
 SceneObject planePropeller;
-Shader* shaderProgram;
+
+InstancedSceneObject instancedCube;
+
+int perlinWidth = 256;
+int perlinHeight = 256;
+float loopInterval = 0.f;
+float deltaTime = 0.f;
 
 int main()
 {
@@ -138,15 +144,6 @@ int main()
     loopInterval = 0.02f;
     auto begin = std::chrono::high_resolution_clock::now();
 
-    int width = 128;
-    int height = 128;
-    int octaveCount = 5;
-    float bias = 2.f;
-    float renderScale = 1.f;
-    float heightScalar = 32.f;
-
-    auto perlinNoise = noise.Noise2D(width, height, &noise.seedVector2D, octaveCount, bias);
-
     while (!glfwWindowShouldClose(window))
     {
         auto frameStart = std::chrono::high_resolution_clock::now();
@@ -158,33 +155,10 @@ int main()
         glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        shaderProgram->use();
-
-        glm::mat4 viewProjection = camera.getViewProjectionMatrix();
-
-        // draw floor (the floor was built so that it does not need to be transformed)
-        shaderProgram->setMat4("model", viewProjection);
-
-        for (int x = 0; x < width; x++)
-        {
-            for (int z = 0; z < height; z++)
-            {
-                auto y = perlinNoise[z * width + x];
-
-                glm::mat4 translationMatrix = glm::translate(x - width/2,(y * heightScalar) - heightScalar, z - height/2);
-                glm::mat4 scalingMatrix = glm::scale(renderScale, renderScale, renderScale);
-
-                glm::mat4 modelMatrix = glm::mat4(1) * scalingMatrix * translationMatrix;
-                auto mvp = viewProjection * modelMatrix;
-
-                shaderProgram->setMat4("model", mvp);
-                unitCube.drawSceneObject();
-            }
-        }
+        instancedCube.drawSceneObject(shaderProgram);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
-
 
         // control render loop frequency
         std::chrono::duration<float> elapsed = std::chrono::high_resolution_clock::now()-frameStart;
@@ -195,6 +169,7 @@ int main()
 
         while (loopInterval > elapsed.count()) {
             elapsed = std::chrono::high_resolution_clock::now() - frameStart;
+            deltaTime = elapsed.count();
         }
     }
 
@@ -209,7 +184,7 @@ void drawObjects(){
     shaderProgram->use();
 
     glm::mat4 scale = glm::scale(1.f, 1.f, 1.f);
-    glm::mat4 viewProjection = camera.getViewProjectionMatrix();
+    glm::mat4 viewProjection = camera.getViewProjectionMatrix(screenWidth, screenHeight);
 
     // draw floor (the floor was built so that it does not need to be transformed)
     shaderProgram->setMat4("model", viewProjection);
@@ -227,6 +202,29 @@ void drawCube(glm::mat4 model){
     cube.drawSceneObject();
 }
 
+std::vector<float> createInstancingOffsets()
+{
+    int octaveCount = 5;
+    float bias = 2.f;
+    float heightScalar = 32.f;
+
+    auto perlinNoise = noise.Noise2D(perlinWidth, perlinHeight, &noise.seedVector2D, octaveCount, bias);
+    std::vector<float> instancingOffsets;
+
+    for (int x = 0; x < perlinWidth; x++)
+    {
+        for (int z = 0; z < perlinHeight; z++)
+        {
+            float y = perlinNoise[z * perlinWidth + x];
+
+            instancingOffsets.push_back(x - perlinWidth/2);
+            instancingOffsets.push_back(glm::round(y * heightScalar - heightScalar/2));
+            instancingOffsets.push_back(z - perlinHeight/2);
+        }
+    }
+    return instancingOffsets;
+}
+
 void setup(){
     // initialize shaders
     shaderProgram = new Shader("shaders/default.vert", "shaders/default.frag");
@@ -242,10 +240,19 @@ void setup(){
     unitCube.VAO = createVertexArray(unitCubeVertices, cubeColors, cubeIndices);
     unitCube.vertexCount = cubeIndices.size();
 
+    std::vector<float> offsets = createInstancingOffsets();
+    instancedCube.VAO = createVertexArray(unitCubeVertices, cubeColors, cubeIndices, offsets);
+    instancedCube.vertexCount = cubeIndices.size();
+    instancedCube.instanceCount = perlinWidth * perlinHeight;
 }
 
 
-unsigned int createVertexArray(const std::vector<float> &positions, const std::vector<float> &colors, const std::vector<unsigned int> &indices){
+unsigned int createVertexArray(
+        const std::vector<float> &positions,
+        const std::vector<float> &colors,
+        const std::vector<unsigned int> &indices,
+        const std::vector<float> &instancingOffsets)
+{
     unsigned int VAO;
     glGenVertexArrays(1, &VAO);
     // bind vertex array object
@@ -257,11 +264,15 @@ unsigned int createVertexArray(const std::vector<float> &positions, const std::v
     glEnableVertexAttribArray(posAttributeLocation);
     glVertexAttribPointer(posAttributeLocation, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
-    // set vertex shader attribute "color"
-    createArrayBuffer(colors); // creates and bind the VBO
-    int colorAttributeLocation = glGetAttribLocation(shaderProgram->ID, "color");
-    glEnableVertexAttribArray(colorAttributeLocation);
-    glVertexAttribPointer(colorAttributeLocation, 4, GL_FLOAT, GL_FALSE, 0, 0);
+    // set vertex shader attribute "instancingOffset"
+    if (!instancingOffsets.empty())
+    {
+        createArrayBuffer(instancingOffsets);
+        int offsetAttributeLocation = glGetAttribLocation(shaderProgram->ID, "instancingOffsets");
+        GLCall(glEnableVertexAttribArray(offsetAttributeLocation));
+        GLCall(glVertexAttribPointer(offsetAttributeLocation, 3, GL_FLOAT, GL_FALSE, 0, 0));
+        GLCall(glVertexAttribDivisor(offsetAttributeLocation, 1));
+    }
 
     // creates and bind the EBO
     createElementArrayBuffer(indices);
@@ -301,74 +312,39 @@ void cursorInRange(float screenX, float screenY, int screenW, int screenH, float
 }
 
 void cursor_input_callback(GLFWwindow* window, double posX, double posY){
-    // get cursor position and scale it down to a smaller range
-    int screenW, screenH;
-    glfwGetWindowSize(window, &screenW, &screenH);
-    glm::vec2 cursorPosition(0.0f);
-    cursorInRange(posX, posY, screenW, screenH, -1.0f, 1.0f, cursorPosition.x, cursorPosition.y);
 
-    // initialize with first value so that there is no jump at startup
-    static glm::vec2 lastCursorPosition = cursorPosition;
-
-    // compute the cursor position change
-    glm::vec2 positionDiff = cursorPosition - lastCursorPosition;
-
-    static float rotationAroundVertical = 0;
-    static float rotationAroundLateral = 0;
-
-    // require a minimum threshold to rotate
-    if (glm::dot(positionDiff, positionDiff) > 1e-5f){
-        camera.forward = glm::vec3 (0,0,-1);
-        // rotate the forward vector around the Y axis, notices that w is set to 0 since it is a vector
-        rotationAroundVertical += glm::radians(-positionDiff.x * camera.rotationGain);
-        camera.forward = glm::rotateY(rotationAroundVertical) * glm::vec4(camera.forward, 0.0f);
-
-        // rotate the forward vector around the lateral axis
-        rotationAroundLateral +=  glm::radians(positionDiff.y * camera.rotationGain);
-        // we need to clamp the range of the rotation, otherwise forward and Y axes get parallel
-        rotationAroundLateral = glm::clamp(rotationAroundLateral, -glm::half_pi<float>() * 0.9f, glm::half_pi<float>() * 0.9f);
-
-        glm::vec3 lateralAxis = glm::cross(camera.forward, glm::vec3(0, 1,0));
-
-        camera.forward = glm::rotate(rotationAroundLateral, lateralAxis) * glm::vec4(camera.forward, 0);
-
-        lastCursorPosition = cursorPosition;
+    // camera rotation
+    static bool firstMouse = true;
+    if (firstMouse)
+    {
+        lastX = posX;
+        lastY = posY;
+        firstMouse = false;
     }
+
+    float xoffset = posX - lastX;
+    float yoffset = lastY - posY; // reversed since y-coordinates go from bottom to top
+
+    lastX = posX;
+    lastY = posY;
+
+    camera.ProcessMouseMovement(xoffset, yoffset);
 }
 
 void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    // TODO move the camera position based on keys pressed (use either WASD or the arrow keys)
-    glm::vec3 forwardInXZ = glm::normalize(glm::vec3(camera.forward.x, 0, camera.forward.z));
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS){
-        camera.position += forwardInXZ * camera.moveSpeed;
-    }
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS){
-        camera.position -= forwardInXZ * camera.moveSpeed;
-    }
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS){
-        // vector perpendicular to camera forward and Y-axis
-        camera.position -= glm::cross(forwardInXZ, glm::vec3(0, 1, 0)) * camera.moveSpeed;
-    }
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS){
-        // vector perpendicular to camera forward and Y-axis
-        camera.position += glm::cross(forwardInXZ, glm::vec3(0, 1, 0)) * camera.moveSpeed;
-    }
+    // movement commands
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+        camera.ProcessKeyboard(FORWARD, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        camera.ProcessKeyboard(BACKWARD, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        camera.ProcessKeyboard(LEFT, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        camera.ProcessKeyboard(RIGHT, deltaTime);
 
-    // snow
-    if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS){
-        particleScale = 3;
-        gravityVelocity = glm::vec3(0.0f, -0.4f, 0.0f);
-        windVelocity = glm::vec3(-0.1f, 0.f, -0.1f);
-    }
-    // rain
-    if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS){
-        particleScale = 1;
-        gravityVelocity = glm::vec3(0.0f, -1.0f, 0.0f);
-        windVelocity = glm::vec3(0.2f, 0.f, 0.2f);
-    }
 
 }
 

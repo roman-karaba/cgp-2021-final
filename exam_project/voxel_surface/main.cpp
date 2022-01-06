@@ -396,7 +396,7 @@ void printControls()
     std::cout << "2: Bias: " << bias << std::endl;
     std::cout << "3: HeightScalar: " << heightScalar << std::endl;
     std::cout << "4: Reseed" << std::endl;
-    std::cout << "5: Toggle Day/Night cycle" << std::endl;
+    std::cout << "5: Toggle Skybox" << std::endl;
     std::cout << "6: Toggle Day/Night cycle" << std::endl;
     std::cout << std::endl;
 }

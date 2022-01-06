@@ -9,7 +9,6 @@ uniform vec3 sunLightDiffuseColor;
 uniform vec3 sunLightSpecular;
 uniform vec3 sunLightAmbient;
 uniform mat4 viewMatrix;
-
 uniform float sunLightIntensity;
 
 vec4 colorWater = vec4(0, 0, .6, 0);
@@ -35,6 +34,6 @@ void main()
    float specular = pow( max( dot(viewDirection, reflectDirection), 0), 32 );
    vec3 specularContribution = 0.5 * specular * sunLightSpecular;
 
-   vec3 finalColor = (sunLightAmbient + specularContribution + diffuseContribution) * color.xyz;
+   vec3 finalColor = (sunLightAmbient * sunLightIntensity + specularContribution + diffuseContribution) * color.xyz ;
    FragColor = vec4(finalColor,1);
 }

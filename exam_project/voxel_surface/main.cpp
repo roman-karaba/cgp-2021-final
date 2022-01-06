@@ -41,7 +41,13 @@ unsigned int createVertexArray(const std::vector<float> &positions,
                                const std::vector<float> &colors = std::vector<float>());
 void setup();
 void drawObjects();
-void calculateCubeSurfaceNormals();
+void drawSkybox();
+void createVoxelLandscape();
+void printControls();
+unsigned int createSkybox();
+unsigned int loadCubemap(std::vector<std::string> faces);
+unsigned int loadTexture(char const * path);
+
 // glfw and input functions
 // ------------------------
 void cursorInRange(float screenX, float screenY, int screenW, int screenH, float min, float max, float &x, float &y);
@@ -49,11 +55,6 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow* window);
 void cursor_input_callback(GLFWwindow* window, double posX, double posY);
 void key_input_callback(GLFWwindow* window, int key, int scanCode, int action, int mods);
-void drawSkybox();
-void createVoxelLandscape();
-unsigned int createSkybox();
-unsigned int loadCubemap(std::vector<std::string> faces);
-unsigned int loadTexture(char const * path);
 
 // screen settings
 // ---------------
@@ -68,7 +69,7 @@ Camera camera(glm::vec3(0.f, 32.f, 0.f));
 glm::vec3 sunLightDiffuseColor = glm::vec3(0.9f, 0.6f, 0.5f);
 glm::vec3 sunLightSpecular = glm::vec3(0.9f, 0.9f, 0.9f);
 glm::vec3 sunLightAmbient = glm::vec3(0.2f, 0.2f, 0.2f);
-float sunLightIntensity = 0.6;
+float sunLightIntensity = 0.8;
 float sunRotation = 0.f;
 float sunRotationSpeed = 36.f;
 
@@ -105,13 +106,6 @@ PerlinLikeNoise noise;
 Shader* shaderProgram;
 Shader* shaderProgramSkybox;
 
-SceneObject cube;
-SceneObject unitCube;
-SceneObject floorObj;
-SceneObject planeBody;
-SceneObject planeWing;
-SceneObject planePropeller;
-
 InstancedSceneObject instancedCube;
 unsigned int skyboxVAO;
 unsigned int cubemapTexture;
@@ -125,7 +119,6 @@ float bias = 1.f;
 float heightScalar = 32.f;
 float loopInterval = 0.f;
 float deltaTime = 0.f;
-
 
 int main()
 {
@@ -142,7 +135,7 @@ int main()
 
     // glfw window creation
     // --------------------
-    GLFWwindow* window = glfwCreateWindow(screenWidth, screenHeight, "Exercise 5.2", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(screenWidth, screenHeight, "", nullptr, nullptr);
     if (window == nullptr)
     {
         std::cout << "Failed to create GLFW window" << std::endl;
@@ -174,15 +167,12 @@ int main()
     glEnable(GL_CULL_FACE);
     glFrontFace(GL_CCW);
 
-    // load textures
-    // -------------
-    skyboxVAO = createSkybox();
-
     // render loop
     // -----------
     // render every loopInterval seconds
     loopInterval = 0.02f;
     auto begin = std::chrono::high_resolution_clock::now();
+    printControls();
 
     while (!glfwWindowShouldClose(window))
     {
@@ -285,7 +275,7 @@ std::vector<float> createInstancingOffsets()
             float y = noise.noiseVector2D[z * perlinWidth + x] * 2 -1;
 
             instancingOffsets.push_back(x - perlinWidth/2);
-            instancingOffsets.push_back(glm::round(y * heightScalar ));
+            instancingOffsets.push_back(glm::round(y * heightScalar));
             instancingOffsets.push_back(z - perlinHeight/2);
         }
     }
@@ -302,6 +292,7 @@ void setup(){
     instancedCube.vertexCount = vertices.size()/6;
     instancedCube.instanceCount = perlinWidth * perlinHeight;
 
+    skyboxVAO = createSkybox();
 }
 
 unsigned int createVertexArray(
@@ -398,49 +389,61 @@ void cursor_input_callback(GLFWwindow* window, double posX, double posY){
     camera.ProcessMouseMovement(xoffset, yoffset);
 }
 
+void printControls()
+{
+    std::cout << "Control keys:" << std::endl;
+    std::cout << "1: OctaveCount: " << octaveCount << std::endl;
+    std::cout << "2: Bias: " << bias << std::endl;
+    std::cout << "3: HeightScalar: " << heightScalar << std::endl;
+    std::cout << "4: Reseed" << std::endl;
+    std::cout << "5: Toggle Day/Night cycle" << std::endl;
+    std::cout << "6: Toggle Day/Night cycle" << std::endl;
+    std::cout << std::endl;
+}
+
 void key_input_callback(GLFWwindow* window, int key, int scanCode, int action, int mods)
 {
     switch (key)
     {
         case GLFW_KEY_1:
             if (action == GLFW_RELEASE){
-                if (octaveCount > 7.f)
+                if (octaveCount >= 8.f)
                 {
                     octaveCount = 1.f;
                 } else octaveCount++;
 
-                std::cout<< "1: OctaveCount: " << octaveCount << std::endl;
+                std::cout<< "Pressed 1: OctaveCount: " << octaveCount << std::endl;
                 auto offsets = createInstancingOffsets();
                 updateVBO(offsets, instancedCube.VBO);
             }
             break;
         case GLFW_KEY_2:
             if (action == GLFW_RELEASE){
-                if (bias > 5.f)
+                if (bias >= 3.f)
                 {
-                    bias = 1.f;
-                } else bias += 0.5f;
+                    bias = .5f;
+                } else bias += 0.25f;
 
-                std::cout<< "2: Bias: " << bias << std::endl;
+                std::cout<< "Pressed 2: Bias: " << bias << std::endl;
                 auto offsets = createInstancingOffsets();
                 updateVBO(offsets, instancedCube.VBO);
             }
             break;
         case GLFW_KEY_3:
             if (action == GLFW_RELEASE){
-                if (heightScalar > 128.f)
+                if (heightScalar >= 256.f)
                 {
                     heightScalar = 2.f;
                 } else heightScalar *= 2;
 
-                std::cout<< "3: HeightScalar: " << heightScalar << std::endl;
+                std::cout<< "Pressed 3: HeightScalar: " << heightScalar << std::endl;
                 auto offsets = createInstancingOffsets();
                 updateVBO(offsets, instancedCube.VBO);
             }
             break;
         case GLFW_KEY_4:
             if (action == GLFW_RELEASE){
-                std::cout<< "4: Reseed" << std::endl;
+                std::cout<< "Pressed 4: Reseed" << std::endl;
                 noise.reseed();
                 auto offsets = createInstancingOffsets();
                 updateVBO(offsets, instancedCube.VBO);
@@ -448,13 +451,13 @@ void key_input_callback(GLFWwindow* window, int key, int scanCode, int action, i
             break;
         case GLFW_KEY_5:
             if (action == GLFW_RELEASE){
-                std::cout<< "5: Toggle Skybox" << std::endl;
+                std::cout<< "Pressed 5: Toggle Skybox" << std::endl;
                 enableSkybox = !enableSkybox;
             }
             break;
         case GLFW_KEY_6:
             if (action == GLFW_RELEASE){
-                std::cout<< "5: Toggle Day/Night cycle" << std::endl;
+                std::cout<< "Pressed 6: Toggle Day/Night cycle" << std::endl;
                 enableDayNightCycle = !enableDayNightCycle;
             }
             break;
@@ -483,9 +486,7 @@ void processInput(GLFWwindow *window) {
 // ---------------------------------------------------------------------------------------------
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
-    camera.projectionMatrix = glm::perspective(glm::radians(45.0f), (float)screenWidth / (float)screenHeight, 0.1f, 100.0f);
-    // make sure the viewport matches the new window dimensions; note that width and
-    // height will be significantly larger than specified on retina displays.
+    camera.getViewProjectionMatrix(width, height); // this sets the projectionMatrix inside the camera class as a side effect
     glViewport(0, 0, width, height);
 }
 

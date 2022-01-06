@@ -11,6 +11,9 @@
 #include "glmutils.h"
 #include "opengl_debug.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #include "PerlinLikeNoise.h"
 #include "primitives.h"
 
@@ -46,9 +49,11 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow* window);
 void cursor_input_callback(GLFWwindow* window, double posX, double posY);
 void key_input_callback(GLFWwindow* window, int key, int scanCode, int action, int mods);
-void drawCube(glm::mat4 model);
-void drawPlane(glm::mat4 model);
+void drawSkybox();
 void createVoxelLandscape();
+unsigned int createSkybox();
+unsigned int loadCubemap(std::vector<std::string> faces);
+unsigned int loadTexture(char const * path);
 
 // screen settings
 // ---------------
@@ -60,9 +65,12 @@ float currentTime = 0;
 float lastX = (float)screenWidth / 2.0;
 float lastY = (float)screenHeight / 2.0;
 Camera camera(glm::vec3(0.f, 32.f, 0.f));
-glm::vec2 sunLightDirection = glm::vec2(glm::radians(-20.f), glm::radians(-20.f));
-glm::vec3 sunLightColor = glm::vec3(0.9f, 0.6f, 0.5f);
-float sunLightIntensity = 0.3;
+glm::vec3 sunLightDiffuseColor = glm::vec3(0.9f, 0.6f, 0.5f);
+glm::vec3 sunLightSpecular = glm::vec3(0.9f, 0.9f, 0.9f);
+glm::vec3 sunLightAmbient = glm::vec3(0.2f, 0.2f, 0.2f);
+float sunLightIntensity = 0.6;
+float sunRotation = 0.f;
+float sunRotationSpeed = 36.f;
 
 struct InstancedSceneObject{
     unsigned int VAO;
@@ -72,20 +80,21 @@ struct InstancedSceneObject{
 
     void drawSceneObject(Shader *shader, glm::vec3 chunkOffset) const{
         glm::vec3 front;
-        front.x = cos(glm::radians(sunLightDirection.x)) * cos(glm::radians(sunLightDirection.y));
-        front.y = sin(glm::radians(sunLightDirection.y));
-        front.z = sin(glm::radians(sunLightDirection.x)) * cos(glm::radians(sunLightDirection.y));
+        front.x = cos( glm::radians(0.f)) * cos(glm::radians(sunRotation));
+        front.y = sin(glm::radians(sunRotation));
+        front.z = sin(glm::radians(0.f)) * cos(glm::radians(sunRotation));
         glm::vec3 normalizedFront = glm::normalize(front);
-        normalizedFront = glm::vec3(0,-1,0);
 
         shader->use();
         shader->setMat4("viewProjectionMatrix", camera.getViewProjectionMatrix(screenWidth, screenHeight));
-        shader->setVec3("sunLightColor", sunLightColor);
+        shader->setMat4("viewMatrix", camera.GetViewMatrix());
+        shader->setVec3("sunLightDiffuseColor", sunLightDiffuseColor);
+        shader->setVec3("sunLightSpecular", sunLightSpecular);
+        shader->setVec3("sunLightAmbient", sunLightAmbient);
         shader->setVec3("sunLightDirection", normalizedFront);
         shader->setFloat("sunLightIntensity", sunLightIntensity);
         shader->setVec3("chunkOffset", chunkOffset);
         glBindVertexArray(VAO);
-//        glDrawElementsInstanced(GL_TRIANGLES,  vertexCount, GL_UNSIGNED_INT, 0, instanceCount);
         glDrawArraysInstanced(GL_TRIANGLES, 0, vertexCount, instanceCount);
     }
 };
@@ -94,6 +103,7 @@ struct InstancedSceneObject{
 // -----------------------------------
 PerlinLikeNoise noise;
 Shader* shaderProgram;
+Shader* shaderProgramSkybox;
 
 SceneObject cube;
 SceneObject unitCube;
@@ -103,6 +113,10 @@ SceneObject planeWing;
 SceneObject planePropeller;
 
 InstancedSceneObject instancedCube;
+unsigned int skyboxVAO;
+unsigned int cubemapTexture;
+bool enableSkybox = false;
+bool enableDayNightCycle = false;
 
 int perlinWidth = 256;
 int perlinHeight = 256;
@@ -111,10 +125,6 @@ float bias = 1.f;
 float heightScalar = 32.f;
 float loopInterval = 0.f;
 float deltaTime = 0.f;
-
-unsigned int vertexCount2;
-
-
 
 
 int main()
@@ -164,6 +174,10 @@ int main()
     glEnable(GL_CULL_FACE);
     glFrontFace(GL_CCW);
 
+    // load textures
+    // -------------
+    skyboxVAO = createSkybox();
+
     // render loop
     // -----------
     // render every loopInterval seconds
@@ -181,7 +195,9 @@ int main()
         glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        if (enableDayNightCycle) sunRotation += sunRotationSpeed * deltaTime;
         createVoxelLandscape();
+        if (enableSkybox) drawSkybox();
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -222,25 +238,39 @@ void createVoxelLandscape()
     instancedCube.drawSceneObject(shaderProgram, glm::vec3(perlinWidth, 0, -perlinHeight));
 }
 
-void drawObjects(){
-    shaderProgram->use();
+unsigned int createSkybox()
+{
+    cubemapTexture = loadCubemap(faces);
 
-    glm::mat4 scale = glm::scale(1.f, 1.f, 1.f);
-    glm::mat4 viewProjection = camera.getViewProjectionMatrix(screenWidth, screenHeight);
+    unsigned int skyboxVAO, skyboxVBO;
+    glGenVertexArrays(1, &skyboxVAO);
+    glGenBuffers(1, &skyboxVBO);
 
-    // draw floor (the floor was built so that it does not need to be transformed)
-    shaderProgram->setMat4("model", viewProjection);
-    floorObj.drawSceneObject();
+    glBindVertexArray(skyboxVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, skyboxVBO);
 
-    // draw 2 cubes and 2 planes in different locations and with different orientations
-    drawCube(viewProjection * glm::translate(2.0f, 1.f, 2.0f) * glm::rotateY(glm::half_pi<float>()) * scale);
-    drawCube(viewProjection * glm::translate(-2.0f, 1.f, -2.0f) * glm::rotateY(glm::quarter_pi<float>()) * scale);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+
+    return skyboxVAO;
 }
 
-void drawCube(glm::mat4 model){
-    // draw object
-    shaderProgram->setMat4("model", model);
-    cube.drawSceneObject();
+void drawSkybox()
+{
+    glDepthFunc(GL_LEQUAL);  // change depth function so depth test passes when values are equal to depth buffer's content
+    shaderProgramSkybox->use();
+    camera.getViewProjectionMatrix(screenWidth, screenHeight);
+    shaderProgramSkybox->setMat4("projection", camera.projectionMatrix);
+    shaderProgramSkybox->setMat4("view", camera.GetViewMatrix());
+    shaderProgramSkybox->setInt("skybox", 0);
+    // skybox cube
+    glBindVertexArray(skyboxVAO);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+    glBindVertexArray(0);
+    glDepthFunc(GL_LESS); // set depth function back to default
 }
 
 std::vector<float> createInstancingOffsets()
@@ -257,23 +287,22 @@ std::vector<float> createInstancingOffsets()
             instancingOffsets.push_back(x - perlinWidth/2);
             instancingOffsets.push_back(glm::round(y * heightScalar ));
             instancingOffsets.push_back(z - perlinHeight/2);
-
         }
     }
     return instancingOffsets;
 }
 
-
 void setup(){
     // initialize shaders
     shaderProgram = new Shader("shaders/default.vert", "shaders/default.frag");
+    shaderProgramSkybox = new Shader("shaders/skybox.vert", "shaders/skybox.frag");
 
     std::vector<float> offsets = createInstancingOffsets();
     instancedCube.VAO = createVertexArray(vertices, offsets);
     instancedCube.vertexCount = vertices.size()/6;
     instancedCube.instanceCount = perlinWidth * perlinHeight;
-}
 
+}
 
 unsigned int createVertexArray(
         const std::vector<float> &positions,
@@ -417,6 +446,18 @@ void key_input_callback(GLFWwindow* window, int key, int scanCode, int action, i
                 updateVBO(offsets, instancedCube.VBO);
             }
             break;
+        case GLFW_KEY_5:
+            if (action == GLFW_RELEASE){
+                std::cout<< "5: Toggle Skybox" << std::endl;
+                enableSkybox = !enableSkybox;
+            }
+            break;
+        case GLFW_KEY_6:
+            if (action == GLFW_RELEASE){
+                std::cout<< "5: Toggle Day/Night cycle" << std::endl;
+                enableDayNightCycle = !enableDayNightCycle;
+            }
+            break;
         default:
             break;
     }
@@ -446,4 +487,35 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
     // make sure the viewport matches the new window dimensions; note that width and
     // height will be significantly larger than specified on retina displays.
     glViewport(0, 0, width, height);
+}
+
+// Load the skybox textures from the given cubeFaces
+unsigned int loadCubemap(std::vector<std::string> faces)
+{
+    unsigned int textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+
+    int width, height, nrComponents;
+    for (unsigned int i = 0; i < faces.size(); i++)
+    {
+        unsigned char *data = stbi_load(faces[i].c_str(), &width, &height, &nrComponents, 0);
+        if (data)
+        {
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+            stbi_image_free(data);
+        }
+        else
+        {
+            std::cout << "Cubemap texture failed to load at path: " << faces[i] << std::endl;
+            stbi_image_free(data);
+        }
+    }
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    return textureID;
 }

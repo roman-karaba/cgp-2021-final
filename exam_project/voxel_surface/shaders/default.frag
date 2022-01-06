@@ -1,10 +1,15 @@
 #version 330 core
 out vec4 FragColor;
 in vec3 vtxPos;
+in vec3 vtxPosVS;
 in vec3 normal;
 
 uniform vec3 sunLightDirection;
-uniform vec3 sunLightColor;
+uniform vec3 sunLightDiffuseColor;
+uniform vec3 sunLightSpecular;
+uniform vec3 sunLightAmbient;
+uniform mat4 viewMatrix;
+
 uniform float sunLightIntensity;
 
 vec4 colorWater = vec4(0, 0, .5, 0);
@@ -18,8 +23,17 @@ void main()
    else if (vtxPos.y > 10) color = colorStone;
    else color = colorGrass;
 
-   float diff = dot(-sunLightDirection, normal);
-   vec4 sunLightContribution = vec4(diff * sunLightColor, 0) * sunLightIntensity;
+   float diffuse = max(dot(-sunLightDirection, normal), 0);
 
-   FragColor = color + sunLightContribution;
+   vec3 diffuseContribution = sunLightDiffuseColor * diffuse;
+   vec3 viewDirection = normalize(vtxPosVS);
+   vec3 sunLightDirectionVS = (viewMatrix * vec4(sunLightDirection,0)).xyz;
+   sunLightDirectionVS = normalize(sunLightDirectionVS);
+   vec3 reflectDirection = reflect(sunLightDirectionVS, normal);
+   float specular = pow( max( dot(viewDirection, reflectDirection), 0), 32 );
+   vec3 specularContribution = 0.5 * specular * sunLightSpecular;
+
+   vec3 finalColor = sunLightAmbient + (specularContribution + diffuseContribution);
+
+   FragColor = vec4(finalColor,0) * color;
 }

@@ -12,9 +12,9 @@ uniform mat4 viewMatrix;
 
 uniform float sunLightIntensity;
 
-vec4 colorWater = vec4(0, 0, .5, 0);
-vec4 colorGrass = vec4(0, .5, 0, 0);
-vec4 colorStone= vec4(.3, .3, .3 ,0);
+vec4 colorWater = vec4(0, 0, .6, 0);
+vec4 colorGrass = vec4(0, .6, 0, 0);
+vec4 colorStone= vec4(.4, .4, .4 ,0);
 
 void main()
 {
